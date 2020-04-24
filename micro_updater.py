@@ -9,12 +9,11 @@ import json
 from paho.mqtt.client import Client as MQTTClient, MQTTMessageInfo
 from paho.mqtt.subscribe import simple as subscribe
 from threading import Thread
-from files_over_repl import FilesOverREPL
 from time import time, sleep
 import socket
 import ctypes
 
-DEFAULT_CONFIG_PATH = 'config.ini'
+DEFAULT_COMPLETE_CONFIG_PATH = 'config.ini'
 CONFIGURATION_LAYOUT = {'github': ['token', 'repo', 'release_cache_complete_path', 'check_rate'],
 						'logging': ['logs_path'],
 						'updates': ['download_path', 'port'],
@@ -34,7 +33,7 @@ class DeviceUpdater(Thread):
 	def __init__(self, ip, port, files, broker, installed_tags_topic, mqtt_client, release_json):
 		super().__init__()
 		self.ip = ip
-		self.port = port
+		self.port = int(port)
 		self.files = files
 		self.broker = broker
 		self.installed_tags_topic = installed_tags_topic
@@ -53,8 +52,8 @@ class DeviceUpdater(Thread):
 			if not self.send_file(file):
 				logger.error(f'[{self.identity()}]: file not sent, aborting update...')
 				return
+			sleep(1)  # Wait a bit to not overcharge probe
 		logger.debug(f'[{self.identity()}]: ')
-		self.send_end_message()
 		logger.debug(f'[{self.identity()}]: stopping me...')
 
 	def send_end_message(self):
@@ -72,6 +71,8 @@ class DeviceUpdater(Thread):
 
 	def send_new_release(self, release_json):
 		logger.debug(f"[{self.identity()}]: Sending {release_json} on {self.topic}...")
+		message = self.mqtt_client.publish(self.topic, payload='', retain=True)
+		self.mqtt_wait_publish(message)
 		message = self.mqtt_client.publish(self.topic, payload=release_json, retain=True)
 		self.mqtt_wait_publish(message)
 		if not message.is_published():
@@ -113,7 +114,7 @@ class DeviceUpdater(Thread):
 
 
 class FileDownloader(Thread):
-	def __init__(self, file: RepoFile, download_path:str, trusted: bool):
+	def __init__(self, file: RepoFile, download_path: str, trusted: bool):
 		super().__init__()
 		self.file = file
 		self.download_path = download_path
@@ -168,7 +169,7 @@ class FileDownloader(Thread):
 
 
 class MicroUpdater:
-	def __init__(self, config_path=DEFAULT_CONFIG_PATH):
+	def __init__(self, config_path=DEFAULT_COMPLETE_CONFIG_PATH):
 		log_format = '<green>{time: YYYY-MM-DD HH:mm:ss.SSS}</green> <level>{level}: {message}</level>'
 		logger.remove()
 		logger.add(sys.stdout, format=log_format, colorize=True)
@@ -195,6 +196,7 @@ class MicroUpdater:
 			except StopIteration:
 				pass
 			tag, files = self.check_repo()
+			files = [file for file in files if ".mpy" in file]  # Download compiled files only
 			if tag is not None:
 				self._download_files(files)
 				update_json = self._update_json(files=files, tag=tag)
@@ -218,7 +220,9 @@ class MicroUpdater:
 				logger.warning('Server received a malformed installed tag message, skipping it...')
 				continue
 			logger.debug(f'New update installed tag from {installed_tag_json["ip"]}')
-			self.spawn_update_thread(installed_tag_json['ip'], files, update_json)
+			if installed_tag_json['tag'] != update_json['tag']:
+				logger.debug(f"Probe out of date: installed {installed_tag_json['tag']}, latest {update_json['tag']}")
+				self.spawn_update_thread(installed_tag_json['ip'], files, update_json)
 
 	def spawn_update_thread(self, ip: str, files, update_json):
 		logger.debug(f'Spawning new thread for {ip} update...')
@@ -286,19 +290,19 @@ class MicroUpdater:
 				for key in CONFIGURATION_LAYOUT[section]:
 					assert key in self.config[section]
 		except AssertionError:
-			logger.critical(f'Configuration file malformed, creating sample as "{DEFAULT_CONFIG_PATH}"...')
+			logger.critical(f'Configuration file malformed, creating sample as "{DEFAULT_COMPLETE_CONFIG_PATH}"...')
 			for section in CONFIGURATION_LAYOUT:
 				self.config[section] = {}
 				for key in CONFIGURATION_LAYOUT[section]:
 					self.config[section][key] = f'<{key}>'
 			try:
-				if os.path.isfile(DEFAULT_CONFIG_PATH):
+				if os.path.isfile(DEFAULT_COMPLETE_CONFIG_PATH):
 					logger.error("Can't create configuration sample, please provide a custom configuration file")
 					exit(1)
-				with open(DEFAULT_CONFIG_PATH, 'w') as file:
+				with open(DEFAULT_COMPLETE_CONFIG_PATH, 'w') as file:
 					self.config.write(file)
 			except Exception as e:
-				logger.critical(f"Can't create a config sample as '{DEFAULT_CONFIG_PATH}' in working directory; {e}")
+				logger.critical(f"Can't create a config sample as '{DEFAULT_COMPLETE_CONFIG_PATH}' in working directory; {e}")
 			finally:
 				exit(1)
 		logger.info(f'Configuration loaded: \n'
@@ -414,5 +418,5 @@ class MicroUpdater:
 		return msg_json
 
 
-mu = MicroUpdater()
-mu.loop()
+updater = MicroUpdater()
+updater.loop()

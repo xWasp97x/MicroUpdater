@@ -1,0 +1,4 @@
+wget~=3.2
+PyGithub~=1.47
+loguru~=0.4.1
+paho-mqtt~=1.5.0
