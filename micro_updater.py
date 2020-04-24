@@ -181,6 +181,7 @@ class MicroUpdater:
 		self.repo_obj = None
 		self.cached_release = None
 		self.github_init()
+		self._clean_download_folder()
 		self.mqtt_client = MQTTClient(client_id=self.config['mqtt']['id'])
 		self.mqtt_init()
 		self.threads = {}  # ip: thread
@@ -314,7 +315,6 @@ class MicroUpdater:
 		github = Github(self.config['github']['token'])
 		self.github_client = github.get_user()
 		self.repo_obj = self.github_client.get_repo(self.config['github']['repo'])
-		self.load_cached_release()
 		logger.debug('Github attributes initialized.')
 		
 	def load_cached_release(self):
@@ -351,7 +351,6 @@ class MicroUpdater:
 			logger.info(f"New update found: {tag}")
 			contents = self.repo_obj.get_contents(path='', ref=tag)
 			files = [RepoFile(file.name, file.sha, file.download_url) for file in contents]
-			self.save_cached_release(tag)
 			return tag, files
 		else:
 			return None, None
