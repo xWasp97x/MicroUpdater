@@ -141,6 +141,7 @@ class FileDownloader(Thread):
 			return False
 
 	def _verify_file(self, file: RepoFile) -> bool:
+		return True  # integrity check temporarily disabled
 		logger.debug(f'Verifying {file.name} integrity...')
 		if self.trusted:
 			logger.warning(f'Skipping {file.name} integrity check')
@@ -197,11 +198,12 @@ class MicroUpdater:
 			except StopIteration:
 				pass
 			tag, files = self.check_repo()
-			files = [file for file in files if ".mpy" in file]  # Download compiled files only
 			if tag is not None:
+				files = [file for file in files if ".mpy" in file.name]  # Download compiled files only
 				self._download_files(files)
-				update_json = self._update_json(files=files, tag=tag)
-				self.start_server(files, update_json)
+				update_json_str = self._update_json(files=files, tag=tag)
+				self.cached_release = tag
+				self.start_server(files, update_json_str)
 			sleep(int(self.config['github']['check_rate']))
 
 	def server(self, files, update_json):
@@ -221,8 +223,8 @@ class MicroUpdater:
 				logger.warning('Server received a malformed installed tag message, skipping it...')
 				continue
 			logger.debug(f'New update installed tag from {installed_tag_json["ip"]}')
-			if installed_tag_json['tag'] != update_json['tag']:
-				logger.debug(f"Probe out of date: installed {installed_tag_json['tag']}, latest {update_json['tag']}")
+			if installed_tag_json['tag'] != json.loads(update_json)['tag']:
+				logger.debug(f"Probe out of date: installed {installed_tag_json['tag']}, latest {json.loads(update_json)['tag']}")
 				self.spawn_update_thread(installed_tag_json['ip'], files, update_json)
 
 	def spawn_update_thread(self, ip: str, files, update_json):
@@ -316,28 +318,6 @@ class MicroUpdater:
 		self.github_client = github.get_user()
 		self.repo_obj = self.github_client.get_repo(self.config['github']['repo'])
 		logger.debug('Github attributes initialized.')
-		
-	def load_cached_release(self):
-		cache_path = self.config['github']['release_cache_complete_path']
-		logger.debug(f'Loading cached release from {cache_path}')
-		try:
-			with open(cache_path, 'r') as file:
-				self.cached_release = file.readline().strip()
-			logger.debug(f'Cached release: {self.cached_release}')
-		except Exception as e:
-			logger.error(f"Can't load cached release, 'default' tag will be used; {e}")
-			self.cached_release = 'default'
-
-	def save_cached_release(self, tag):
-		release_cache_path = self.config["github"]["release_cache_complete_path"]
-		logger.debug(f'Saving cached release in {release_cache_path}')
-		self.cached_release = tag
-		try:
-			with open(release_cache_path, 'w') as file:
-				file.write(self.cached_release)
-			logger.debug(f'Cached release saved.')
-		except Exception as e:
-			logger.error(f"Can't save cached release")
 
 	def check_repo(self):  # returns: latest_tag, files
 		logger.debug(f'Checking "{self.config["github"]["repo"]}" latest release tag')
@@ -413,8 +393,9 @@ class MicroUpdater:
 		msg = {}
 		msg['tag'] = tag
 		msg['files'] = [file.name for file in files]
-		msg_json = json.dumps(msg)
-		return msg_json
+		update_msg = json.dumps(msg)
+		update_json = msg
+		return update_msg, update_json
 
 
 updater = MicroUpdater()
