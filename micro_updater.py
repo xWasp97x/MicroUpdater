@@ -14,7 +14,7 @@ import socket
 import ctypes
 
 DEFAULT_COMPLETE_CONFIG_PATH = 'config.ini'
-CONFIGURATION_LAYOUT = {'github': ['token', 'repo', 'release_cache_complete_path', 'check_rate'],
+CONFIGURATION_LAYOUT = {'github': ['token', 'repo', 'check_rate'],
 						'logging': ['logs_path'],
 						'updates': ['download_path', 'port'],
 						'mqtt': ['broker', 'updates_topic', 'updates_acks_topic', 'installed_tags_topic', 'id'],
@@ -399,5 +399,8 @@ class MicroUpdater:
 		return update_msg, update_json
 
 
-updater = MicroUpdater()
+if len(sys.argv) > 1:
+	updater = MicroUpdater(sys.argv[1])
+else:
+	updater = MicroUpdater()
 updater.loop()
