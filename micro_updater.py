@@ -201,12 +201,12 @@ class MicroUpdater:
 			if tag is not None:
 				files = [file for file in files if ".mpy" in file.name]  # Download compiled files only
 				self._download_files(files)
-				update_json_str = self._update_json(files=files, tag=tag)
+				update_str, update_json = self._update_json(files=files, tag=tag)
 				self.cached_release = tag
-				self.start_server(files, update_json_str)
+				self.start_server(files, update_json)
 			sleep(int(self.config['github']['check_rate']))
 
-	def server(self, files, update_json):
+	def server(self, files, update_json: dict):
 		while self.server_loop:
 			logger.debug('Server waiting for installed tag...')
 			topic = self.config['mqtt']['installed_tags_topic']
@@ -223,7 +223,7 @@ class MicroUpdater:
 				logger.warning('Server received a malformed installed tag message, skipping it...')
 				continue
 			logger.debug(f'New update installed tag from {installed_tag_json["ip"]}')
-			if installed_tag_json['tag'] != json.loads(update_json)['tag']:
+			if installed_tag_json['tag'] != update_json['tag']:
 				logger.debug(f"Probe out of date: installed {installed_tag_json['tag']}, latest {json.loads(update_json)['tag']}")
 				self.spawn_update_thread(installed_tag_json['ip'], files, update_json)
 
@@ -246,7 +246,7 @@ class MicroUpdater:
 			return True
 		return False
 
-	def start_server(self, files, update_json):
+	def start_server(self, files, update_json: dict):
 		logger.debug('Starting update server...')
 		self.server_loop = False
 		if self.server_thread is not None:
@@ -389,7 +389,7 @@ class MicroUpdater:
 		with open(file.path, 'w') as file_opened:
 			file_opened.write(content)
 
-	def _update_json(self, tag, files):
+	def _update_json(self, tag, files) -> (str, dict):
 		msg = {}
 		msg['tag'] = tag
 		msg['files'] = [file.name for file in files]
