@@ -46,6 +46,7 @@ class DeviceUpdater(Thread):
 
 	def run(self) -> None:
 		self.send_new_release(self.release_json)
+		sleep(3)  # Wait a bit to ensure that probe's socket is opened
 		logger.debug(f'[{self.identity()}]: sending {len(self.files)} files')
 		for i, file in enumerate(self.files):
 			logger.debug(f'[{self.identity()}]: [{i}/{len(self.files)-1}] sending {file.name}...')
