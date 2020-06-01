@@ -46,7 +46,6 @@ class DeviceUpdater(Thread):
 
 	def run(self) -> None:
 		self.send_new_release(self.release_json)
-		sleep(3)  # Wait a bit to ensure that probe's socket is opened
 		logger.debug(f'[{self.identity()}]: sending {len(self.files)} files')
 		for i, file in enumerate(self.files):
 			logger.debug(f'[{self.identity()}]: [{i}/{len(self.files)-1}] sending {file.name}...')
@@ -94,10 +93,21 @@ class DeviceUpdater(Thread):
 			return True
 		return False
 
+	def wait_open_port(self, s: socket.socket):
+		timeout = 3  # seconds
+		tries = int(timeout/0.1)
+		for _ in range(tries):
+			try:
+				s.connect((self.ip, self.port))
+				break
+			except ConnectionRefusedError:
+				sleep(0.1)
+		raise ConnectionRefusedError
+
 	def send_file(self, file: RepoFile) -> bool:
 		try:
 			with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-				s.connect((self.ip, self.port))
+				self.wait_open_port(s)
 				with open(file.path, 'rb') as f:
 					content = f.read()
 				if s.sendall(content) is None:
@@ -109,6 +119,8 @@ class DeviceUpdater(Thread):
 		except socket.timeout as stout:
 			logger.error(f"[{self.identity()}]: Timeout connecting to remote socket; {stout}")
 			return False
+		except ConnectionRefusedError as cre:
+			logger.error(f"[{self.identity()}]: remote socket is closed; {cre}")
 		except Exception as e:
 			logger.error(f"[{self.identity()}]: Error reading file '{file.path}'; {e}")
 			return False
